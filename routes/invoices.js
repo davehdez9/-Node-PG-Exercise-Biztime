@@ -71,17 +71,38 @@ router.post('/', async (req, res, next) => {
 /** PUT /invoices/[id]
  * Update an invoice
  * if invoice cannot be found, return 404
- * Need to be passed in JSON body of: {amt}
+ * Need to be passed in JSON body of: {amt, paid}
+ * if paying unpaid invoice -> sets paid_date to today
+ *  if un-paying -> set paid_date to null
+ *      else -> Keep current paid date
  * Return: {invoice: {id, comp_code, amt, paid, add_date, paid_date}}
 */
 router.put('/:id', async (req, res, next) => {
     try {
         const { id } = req.params
-        const { amt } = req.body
-        const results = await db.query(`UPDATE invoices SET amt=$1 WHERE id=$2 RETURNING id, comp_code, amt, paid, add_date, paid_date`, [amt, id])
-        if(results.rows.length === 0){
+        const { amt, paid } = req.body
+        let paidDate = null
+
+        const currentResult = await db.query(
+            `SELECT paid FROM invoices WHERE id = $1`, [id]
+        )
+
+        if(currentResult.rows.length === 0){
             throw new ExpressError(`Invoice ${id} not found`, 404)
         }
+
+        const currentPaidDate = currentResult.rows[0].paid_date
+
+        if(!currentPaidDate & paid){
+            paidDate = new Date()
+        } else if (!paid){
+            paidDate = null
+        } else {
+            paidDate = currentPaidDate
+        }
+
+        const results = await db.query(`UPDATE invoices SET amt=$1, paid=$2, paid_date=$3 WHERE id=$4 RETURNING id, comp_code, amt, paid, add_date, paid_date`, [amt, paid, paidDate,id])
+      
         return res.json({"invoice": results.rows[0]})
     } catch (error) {
         next(error)
